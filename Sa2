@@ -3,11 +3,12 @@
 #include <DHT.h>
 #include <WiFiClient.h>
 
-#define DHTPIN 4
+#define DHTPIN 4       // Definindo o pino do DHT
 #define DHTTYPE DHT22
 
 DHT dht(DHTPIN, DHTTYPE);
 
+// COnfigurando Wifi no ThingSpeak
 const char* ssid = "Wokwi-GUEST"; 
 const char* password = "";
 const char* server = "api.thingspeak.com";
