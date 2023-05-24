@@ -1,0 +1,145 @@
+#include <WiFi.h>
+#include <PubSubClient.h>
+#include <DHT.h>
+#include <Adafruit_Sensor.h>
+#include <WiFiClient.h>
+
+const char* ssid = "Wokwi-GUEST";
+const char* password = "";
+const char* mqttBroker = "broker.hivemq.com";
+const int mqttPort = 1883;
+const char* mqttTopic = "senai";
+const char* server = "api.thingspeak.com";
+const String apiKey = "PD83FXOUQ8DPEYZB";
+
+//Pinos DHT22
+#define DHTPIN 15
+#define DHTTYPE DHT22
+
+DHT dht(DHTPIN, DHTTYPE);
+
+// Pinos dos leds
+#define led1 13
+#define led2 12
+
+WiFiClient espClient;
+PubSubClient mqttClient(espClient);
+
+void setup() {
+  Serial.begin(115200);
+  delay(2000);
+
+  // Conexão ao Wi-Fi
+  Serial.println("Conectando ao Wi-Fi...");
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println();
+  Serial.println("Conectado à rede Wi-Fi");
+
+  // Configuração do MQTT Broker
+  mqttClient.setServer(mqttBroker, mqttPort);
+
+  // Inicialização do sensor DHT22
+  dht.begin();
+
+  // Configuração dos pinos dos LEDs
+  pinMode(led1, OUTPUT);
+  pinMode(led2, OUTPUT);
+
+  // Conexão ao broker MQTT
+  connectToMqttBroker();
+}
+
+void loop() {
+  // Verifica a conexão MQTT e reconecta, se necessário
+  if (!mqttClient.connected()) {
+    connectToMqttBroker();
+  }
+
+  // Lê a temperatura e umidade do sensor DHT22
+  float temperatura = dht.readTemperature();
+  float umidade = dht.readHumidity();
+
+  // Publica a temperatura e umidade no tópico MQTT
+  String jsonPayload = "{\"temperatura\": " + String(temperatura) + ", \"umidade\": " + String(umidade) + "}";
+  mqttClient.publish(mqttTopic, jsonPayload.c_str());
+  Serial.println("---------------------------------------------------------");
+  // Exibe a temperatura e umidade no monitor serial
+  Serial.print("Temperatura: ");
+  Serial.print(temperatura);
+  Serial.print("°C - Umidade: ");
+  Serial.print(umidade);
+  Serial.println("%");
+
+  // Verifica se a temperatura está acima de 35°C e aciona o LED 1, se for o caso
+  if (temperatura > 35) {
+    digitalWrite(led1, HIGH);
+    Serial.println("Acionando LED 1! Temperatura acima dos 35°C");
+  } else {
+    digitalWrite(led1, LOW);
+  }
+
+  // Verifica se a umidade está acima de 70% e aciona o LED 2, se for o caso
+  if (umidade > 70) {
+    digitalWrite(led2, HIGH);
+    Serial.println("Acionando LED 2! Umidade acima dos 70%");
+  } else {
+    digitalWrite(led2, LOW);
+  }
+
+  // Envio dos dados para o ThingSpeak
+  sendToThingSpeak(temperatura, umidade);
+
+  delay(1000); // Aguarda 1 segundo antes de ler novamente os valores dos sensores
+}
+
+void connectToMqttBroker() {
+  Serial.println("Conectando ao broker MQTT...");
+  String clientId = "esp32Des_senai-" + String(random(0xffff), HEX);
+
+  while (!mqttClient.connect(clientId.c_str())) {
+    Serial.print(".");
+    delay(500);
+  }
+
+  Serial.println();
+  Serial.println("Conectado ao broker MQTT");
+}
+
+void sendToThingSpeak(float temperature, float humidity) {
+  WiFiClient client;
+if (client.connect(server, 80)) {
+    String postStr = apiKey;
+    postStr += "&field1=";
+    postStr += String(temperature);
+    postStr += "&field2=";
+    postStr += String(humidity);
+    postStr += "\r\n\r\n";
+
+    client.print("POST /update HTTP/1.1\n");
+    client.print("Host: api.thingspeak.com\n");
+    client.print("Connection: close\n");
+    client.print("X-THINGSPEAKAPIKEY: " + apiKey + "\n");
+    client.print("Content-Type: application/x-www-form-urlencoded\n");
+    client.print("Content-Length: ");
+    client.print(postStr.length());
+    client.print("\n\n");
+    client.print(postStr);
+
+    Serial.println("------------------------------------------------------");
+    Serial.println("Informações levadas para o ThingSpeak");
+    Serial.println("Temperatura: " + String(temperature) + "°C");
+    Serial.println("Umidade: " + String(humidity) + "%");
+
+    delay(2000);
+  } else {
+    Serial.println("A conexão com o ThingSpeak falhou");
+  }
+
+  client.stop();
+
+  delay(30000);
+}
